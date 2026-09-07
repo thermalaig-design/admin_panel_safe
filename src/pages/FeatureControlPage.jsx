@@ -21,6 +21,106 @@ function normalizeQuickOrder(value) {
   return Number(value);
 }
 
+const DISPLAY_IN_APP_HOME = 'home';
+const DISPLAY_IN_APP_SIDEBAR = 'sideBar';
+
+const HOME_ONLY_PLACEMENT_KEYS = new Set([
+  'feature_gallery',
+  'feature_sponsors',
+  'feature_marquee',
+  'feature_trustlist',
+  'feature_trust_list',
+  'feature_notifications',
+  'feature_developer_info',
+  'feature_member_banner',
+  'trustlist',
+  'trust_list',
+  'developers',
+  'developer_info',
+  'developerinfo',
+  'memberbanner',
+  'member_banner',
+]);
+
+const SIDEBAR_ONLY_PLACEMENT_KEYS = new Set([
+  'feature_add_community',
+  'feature_nomination_details',
+  'feature_nomination',
+  'add_community',
+  'nomination_details',
+  'nomination',
+]);
+
+const normalizeDisplayInApp = (value) => String(value || DISPLAY_IN_APP_HOME).trim().toLowerCase();
+
+const normalizePlacementKey = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/[^/]+/i, '')
+    .replace(/[?#].*$/, '')
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[-\s/]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+function getPlacementCandidates(row) {
+  const fields = [
+    row.master_name,
+    row.master_subname,
+    row.display_name,
+    row.tagline,
+    row.route,
+    row.name,
+    row.description,
+  ];
+
+  return fields.reduce((acc, value) => {
+    const normalized = normalizePlacementKey(value);
+    if (!normalized) return acc;
+    acc.add(normalized);
+    acc.add(normalized.replace(/_/g, ''));
+    if (!normalized.startsWith('feature_')) {
+      acc.add(`feature_${normalized}`);
+    }
+    return acc;
+  }, new Set());
+}
+
+function getDisplayPlacementPolicy(row) {
+  const candidates = getPlacementCandidates(row);
+  const hasKey = (keys) => Array.from(keys).some((key) => candidates.has(key) || candidates.has(key.replace(/_/g, '')));
+
+  if (hasKey(HOME_ONLY_PLACEMENT_KEYS)) {
+    return {
+      type: 'home-only',
+      locked: true,
+      forcedDisplayInApp: DISPLAY_IN_APP_HOME,
+      displaysInSidebar: false,
+      message: 'This feature is meant to show on Home only.',
+    };
+  }
+
+  if (hasKey(SIDEBAR_ONLY_PLACEMENT_KEYS)) {
+    return {
+      type: 'sidebar-only',
+      locked: true,
+      forcedDisplayInApp: DISPLAY_IN_APP_SIDEBAR,
+      displaysInSidebar: true,
+      message: 'This feature is meant to show only in Sidebar.',
+    };
+  }
+
+  return {
+    type: 'configurable',
+    locked: false,
+    forcedDisplayInApp: null,
+    displaysInSidebar: normalizeDisplayInApp(row.display_in_app) === 'sidebar',
+    message: '',
+  };
+}
+
 const APP_CATEGORY_RULES = [
   { key: 'auth-access', label: 'Extra', keywords: ['login', 'otp', 'auth', 'security', 'password', 'permission', 'role', 'vip', 'appointment', 'opd', 'doctor', 'schedule', 'booking', 'book', 'referral', 'reference', 'report', 'document', 'upload', 'download', 'certificate', 'record', 'birthday', 'wishes', 'wish'] },
   { key: 'company-details', label: 'Company Details', keywords: ['trust list', 'trustlist', 'trust_list'] },
@@ -246,11 +346,13 @@ export default function FeatureControlPage() {
     () =>
       rows.map((row) => {
         const category = classifyFeatureByApp(row);
+        const placementPolicy = getDisplayPlacementPolicy(row);
         return {
           ...row,
           sub_feature_count: Number(subFeatureCountByFeatureId[String(row.feature_id)] || 0),
           app_category: category.key,
           app_category_label: category.label,
+          display_placement_policy: placementPolicy,
         };
       }),
     [rows, subFeatureCountByFeatureId],
@@ -432,14 +534,27 @@ export default function FeatureControlPage() {
   const handleToggle = async (row, nextEnabled) => {
     const key = row.feature_id;
     setTogglingMap((prev) => ({ ...prev, [key]: true }));
+    const placementPolicy = getDisplayPlacementPolicy(row);
+    const forcedDisplayInApp = nextEnabled ? placementPolicy.forcedDisplayInApp : null;
 
-    const { data, error: toggleError } = await toggleFeatureEnabled({
-      mergedFeature: row,
-      trustId: selectedTrustId,
-      tier: selectedTier,
-      isEnabled: nextEnabled,
-      trustName: selectedTrust?.name || '',
-    });
+    const { data, error: toggleError } = forcedDisplayInApp
+      ? await saveFeatureCustomization({
+        mergedFeature: row,
+        trustId: selectedTrustId,
+        tier: selectedTier,
+        trustName: selectedTrust?.name || '',
+        updates: {
+          is_enabled: !!nextEnabled,
+          display_in_app: forcedDisplayInApp,
+        },
+      })
+      : await toggleFeatureEnabled({
+        mergedFeature: row,
+        trustId: selectedTrustId,
+        tier: selectedTier,
+        isEnabled: nextEnabled,
+        trustName: selectedTrust?.name || '',
+      });
 
     setTogglingMap((prev) => ({ ...prev, [key]: false }));
 
@@ -449,10 +564,50 @@ export default function FeatureControlPage() {
     }
 
     applyUpdatedFlag(row.feature_id, data);
-    setFlash({ type: 'success', text: `Feature ${nextEnabled ? 'enabled' : 'disabled'} successfully.` });
+    setFlash({
+      type: 'success',
+      text: forcedDisplayInApp
+        ? `Feature ${nextEnabled ? 'enabled' : 'disabled'} successfully. ${placementPolicy.message}`
+        : `Feature ${nextEnabled ? 'enabled' : 'disabled'} successfully.`,
+    });
   };
 
   const handleDisplayInAppToggle = async (row, displayInSidebar) => {
+    const placementPolicy = getDisplayPlacementPolicy(row);
+    if (placementPolicy.locked) {
+      const actualDisplay = normalizeDisplayInApp(row.display_in_app);
+      const desiredDisplay = normalizeDisplayInApp(placementPolicy.forcedDisplayInApp);
+
+      if (row.flag_id && actualDisplay === desiredDisplay) {
+        setFlash({ type: 'info', text: placementPolicy.message });
+        return;
+      }
+
+      const key = row.feature_id;
+      setDisplayTogglingMap((prev) => ({ ...prev, [key]: true }));
+
+      const { data, error: updateError } = await saveFeatureCustomization({
+        mergedFeature: row,
+        trustId: selectedTrustId,
+        tier: selectedTier,
+        trustName: selectedTrust?.name || '',
+        updates: {
+          display_in_app: placementPolicy.forcedDisplayInApp,
+        },
+      });
+
+      setDisplayTogglingMap((prev) => ({ ...prev, [key]: false }));
+
+      if (updateError) {
+        setFlash({ type: 'error', text: updateError.message || 'Unable to update app display.' });
+        return;
+      }
+
+      applyUpdatedFlag(row.feature_id, data);
+      setFlash({ type: 'info', text: placementPolicy.message });
+      return;
+    }
+
     const key = row.feature_id;
     setDisplayTogglingMap((prev) => ({ ...prev, [key]: true }));
 
@@ -462,7 +617,7 @@ export default function FeatureControlPage() {
       tier: selectedTier,
       trustName: selectedTrust?.name || '',
       updates: {
-        display_in_app: displayInSidebar ? 'sideBar' : 'home',
+        display_in_app: displayInSidebar ? DISPLAY_IN_APP_SIDEBAR : DISPLAY_IN_APP_HOME,
       },
     });
 
