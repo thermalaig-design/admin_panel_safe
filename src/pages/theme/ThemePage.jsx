@@ -16,6 +16,11 @@ const EMPTY_FORM = {
   custom_css: '',
   is_active: true,
 };
+const TEMPLATE_SCOPE_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'my', label: 'My' },
+  { key: 'other', label: 'Other' },
+];
 const DEFAULT_NEW_HOME_LAYOUT = ['trustList', 'marquee', 'sponsors', 'gallery', 'quickActions'];
 const DEFAULT_HOME_LAYOUT_MODES = { gallery: 'content', sponsors: 'box' };
 const HOME_LAYOUT_MODE_KEYS = new Set(['gallery', 'sponsors']);
@@ -306,13 +311,43 @@ const setNestedValue = (obj, keyPath, value) => {
   return nextObj;
 };
 
+const parseLegacyPageBackground = (value) => {
+  const raw = safeText(value, '').trim();
+  if (!raw) return {};
+  const colors = raw.match(/#[0-9a-f]{3,6}/gi) || [];
+  const firstColor = colors[0] || '';
+  const secondColor = colors[1] || '';
+  const gradientType = raw.match(/^([a-z]+)-gradient/i)?.[1]?.toLowerCase();
+  const gradientAngle = Number(raw.match(/gradient\(\s*([0-9.]+)deg/i)?.[1]);
+
+  if (HEX_COLOR_RE.test(raw)) {
+    return {
+      bg_color_1: raw,
+      bg_color_2: deriveSecondBackgroundColor(raw, raw),
+      gradient_type: 'none',
+    };
+  }
+
+  return {
+    ...(firstColor ? { bg_color_1: firstColor } : {}),
+    ...(secondColor ? { bg_color_2: secondColor } : {}),
+    ...(gradientType ? { gradient_type: gradientType } : {}),
+    ...(Number.isFinite(gradientAngle) ? { gradient_angle: gradientAngle } : {}),
+  };
+};
+
 const buildThemeConfigForm = (source = {}) => {
   const sourceConfig = source && typeof source === 'object' ? source : {};
   const nextConfig = {};
 
   THEME_SECTION_ORDER.forEach(({ key }) => {
     const defaults = DEFAULT_THEME_SECTION_CONFIG[key] || {};
-    const sourceSection = sourceConfig[key] && typeof sourceConfig[key] === 'object' ? sourceConfig[key] : {};
+    const sourceSection =
+      sourceConfig[key] && typeof sourceConfig[key] === 'object'
+        ? sourceConfig[key]
+        : key === 'page_bg'
+          ? parseLegacyPageBackground(sourceConfig[key])
+          : {};
     nextConfig[key] = { ...defaults, ...sourceSection };
     if (defaults.component_overrides && typeof defaults.component_overrides === 'object') {
       nextConfig[key].component_overrides = {
@@ -365,7 +400,10 @@ export default function ThemePage() {
   const [detailId, setDetailId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [successToast, setSuccessToast] = useState('');
   const [assigningId, setAssigningId] = useState(null);
+  const [templateScope, setTemplateScope] = useState('all');
+  const [pendingDiscardAction, setPendingDiscardAction] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [themeConfigForm, setThemeConfigForm] = useState(buildThemeConfigForm(DEFAULT_THEME_SECTION_CONFIG));
   const [animationConfig, setAnimationConfig] = useState(DEFAULT_ANIMATIONS);
@@ -416,6 +454,12 @@ export default function ThemePage() {
     loadEnabledFeatures();
   }, [trustId]);
 
+  useEffect(() => {
+    if (!successToast) return undefined;
+    const timer = window.setTimeout(() => setSuccessToast(''), 3000);
+    return () => window.clearTimeout(timer);
+  }, [successToast]);
+
 
 
   const filtered = useMemo(() => {
@@ -426,6 +470,22 @@ export default function ThemePage() {
     );
   }, [templates, searchTerm]);
 
+  const activeTemplateId = currentTrust?.template_id || null;
+  const visibleTemplates = useMemo(() => {
+    const scoped = filtered.filter((item) => {
+      if (item.is_active === false) return false;
+      const isMine = String(item.trust_id || '') === String(trustId || '');
+      if (templateScope === 'my') return isMine;
+      if (templateScope === 'other') return !isMine;
+      return true;
+    });
+    return [...scoped].sort((left, right) => {
+      const leftApplied = left.id === activeTemplateId ? 1 : 0;
+      const rightApplied = right.id === activeTemplateId ? 1 : 0;
+      return rightApplied - leftApplied;
+    });
+  }, [activeTemplateId, filtered, templateScope, trustId]);
+
   const myTemplates = useMemo(
     () => filtered.filter((item) => String(item.trust_id || '') === String(trustId || '')),
     [filtered, trustId]
@@ -434,7 +494,6 @@ export default function ThemePage() {
     () => filtered.filter((item) => String(item.trust_id || '') !== String(trustId || '')),
     [filtered, trustId]
   );
-  const activeTemplateId = currentTrust?.template_id || null;
   const selectedTemplate = useMemo(() => templates.find((item) => item.id === selectedId) || null, [templates, selectedId]);
   const detailTemplate = useMemo(() => templates.find((item) => item.id === detailId) || null, [templates, detailId]);
   const canEdit = (item) => String(item?.trust_id || '') === String(trustId || '');
@@ -535,7 +594,11 @@ export default function ThemePage() {
     setShowDetail(true);
   };
 
-  const closeThemeForm = () => {
+  const closeThemeForm = ({ force = false } = {}) => {
+    if (!force && showForm && !isViewMode) {
+      setPendingDiscardAction('close');
+      return;
+    }
     setShowForm(false);
     setSelectedId(null);
     setSaveError('');
@@ -563,6 +626,7 @@ export default function ThemePage() {
   const handleSave = async () => {
     if (isViewMode) return;
     setSaveError('');
+    setSuccessToast('');
     if (!form.name.trim()) {
       setSaveError('Theme name is required.');
       return;
@@ -625,6 +689,7 @@ export default function ThemePage() {
       else if (data) {
         setTemplates((prev) => prev.map((item) => item.id === selectedId ? data : item));
         setShowForm(false);
+        setSuccessToast('Theme saved successfully.');
       }
     } else {
       const { data, error: createErr } = await createTemplate(payload);
@@ -634,6 +699,7 @@ export default function ThemePage() {
         setSelectedId(data.id);
         setShowForm(false);
         setShowPicker(true);
+        setSuccessToast('Theme saved successfully.');
       }
     }
     setSaving(false);
@@ -1054,6 +1120,47 @@ export default function ThemePage() {
         .sort((a, b) => a.order - b.order || a.key.localeCompare(b.key)),
     [homeLayoutOrder]
   );
+  const themeErrorMessage = saveError || error;
+  const closeErrorModal = () => {
+    setSaveError('');
+    setError('');
+  };
+  const navigateBackToDashboard = () => {
+    navigate('/dashboard', { state: { userName, trust: currentTrust || trust, sidebarNavKey: currentSidebarNavKey } });
+  };
+  const handleBack = () => {
+    if (showForm && !isViewMode) {
+      setPendingDiscardAction('back');
+      return;
+    }
+    navigateBackToDashboard();
+  };
+  const handleDiscardCancel = () => {
+    setPendingDiscardAction(null);
+  };
+  const handleDiscardProceed = () => {
+    const action = pendingDiscardAction;
+    setPendingDiscardAction(null);
+    if (action === 'back') {
+      navigateBackToDashboard();
+      return;
+    }
+    closeThemeForm({ force: true });
+  };
+  const headerAction = showForm ? (
+    <span className="theme-header-save-wrap" title={isViewMode ? 'View only' : undefined}>
+      <button
+        className="theme-header-save-btn"
+        type="button"
+        onClick={handleSave}
+        disabled={isViewMode || saving}
+      >
+        {saving ? 'Saving...' : 'Save Theme'}
+      </button>
+    </span>
+  ) : (
+    <button className="theme-add-btn" onClick={() => setShowPicker(true)} type="button">Select Theme</button>
+  );
 
   if (!trustId) return null;
 
@@ -1065,15 +1172,17 @@ export default function ThemePage() {
         onLogout={() => navigate('/login')}
       />
       <main className="theme-main">
+        {successToast && (
+          <div className="theme-toast theme-toast-success" role="status" aria-live="polite">
+            {successToast}
+          </div>
+        )}
         <PageHeader
           title="Theme"
           subtitle="Manage templates and trust theme selection"
-          onBack={() => navigate('/dashboard', { state: { userName, trust: currentTrust || trust, sidebarNavKey: currentSidebarNavKey } })}
-          right={<button className="theme-add-btn" onClick={() => setShowPicker(true)}>Select Theme</button>}
+          onBack={handleBack}
+          right={headerAction}
         />
-
-        {error && <div className="theme-error">{error}</div>}
-        {saveError && <div className="theme-error">{saveError}</div>}
 
         <div className={`theme-content ${showForm ? 'form-only' : ''}`}>
           {!showForm && (
@@ -1085,22 +1194,42 @@ export default function ThemePage() {
                 <p>Pick, edit and apply templates for {currentTrust?.name || trust?.name || 'this trust'}.</p>
               </div>
               <div className="theme-list-meta">
-                <span>Templates: {templates.length}</span>
+                <span>Templates: {visibleTemplates.length}</span>
                 <button className="theme-add-btn" onClick={openCreate} type="button">Create Theme</button>
+              </div>
+            </div>
+            <div className="theme-list-controls">
+              <input
+                type="search"
+                placeholder="Search themes..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <div className="theme-scope-toggle" aria-label="Filter themes by ownership">
+                {TEMPLATE_SCOPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={templateScope === option.key ? 'active' : ''}
+                    onClick={() => setTemplateScope(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
 
           <div className="theme-list">
             {loading && <div className="theme-loading">Loading themes...</div>}
-            {!loading && templates.filter((item) => item.is_active !== false).length === 0 && (
+            {!loading && visibleTemplates.length === 0 && (
               <div className="theme-empty">
                 <div className="theme-empty-icon">T</div>
-                <h3>No themes yet</h3>
-                <p>Create your first theme template to get started.</p>
-                <button className="theme-add-btn" onClick={openCreate}>Create Theme</button>
+                <h3>No themes found</h3>
+                <p>Try another search or filter.</p>
+                <button className="theme-add-btn" onClick={() => { setSearchTerm(''); setTemplateScope('all'); }}>Clear Filters</button>
               </div>
             )}
-            {!loading && templates.filter((item) => item.is_active !== false).map((theme) => {
+            {!loading && visibleTemplates.map((theme) => {
               const previewData = buildTemplateMobilePreview(theme);
               return (
                 <div key={theme.id} className={`theme-card ${activeTemplateId === theme.id ? 'active' : ''} ${canEdit(theme) ? 'my' : 'other'}`} onClick={() => openDetail(theme.id)}>
@@ -1337,6 +1466,53 @@ export default function ThemePage() {
                 <div className="theme-detail-actions">
                   <button className="theme-icon-btn" type="button" onClick={() => handleAssign(detailTemplate)}>{activeTemplateId === detailTemplate.id ? 'Applied' : 'Apply Theme'}</button>
                   {canEdit(detailTemplate) && <button className="theme-icon-btn" type="button" onClick={() => openEdit(detailTemplate.id)}>Edit Theme</button>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pendingDiscardAction && (
+            <div className="theme-modal-overlay theme-discard-modal-overlay">
+              <div
+                className="theme-modal theme-discard-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="theme-discard-title"
+                aria-describedby="theme-discard-message"
+              >
+                <div className="theme-discard-modal-head">
+                  <div className="theme-discard-modal-icon">!</div>
+                  <div>
+                    <h3 id="theme-discard-title">Discard changes?</h3>
+                    <p id="theme-discard-message">All your changes will be discarded.</p>
+                  </div>
+                </div>
+                <div className="theme-discard-modal-actions">
+                  <button className="theme-secondary-btn" type="button" onClick={handleDiscardCancel}>Cancel</button>
+                  <button className="theme-discard-proceed-btn" type="button" onClick={handleDiscardProceed}>Proceed</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {themeErrorMessage && (
+            <div className="theme-modal-overlay theme-error-modal-overlay">
+              <div
+                className="theme-modal theme-error-modal"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="theme-error-title"
+                aria-describedby="theme-error-message"
+              >
+                <div className="theme-error-modal-head">
+                  <div className="theme-error-modal-icon">!</div>
+                  <div>
+                    <h3 id="theme-error-title">Action needed</h3>
+                    <p id="theme-error-message">{themeErrorMessage}</p>
+                  </div>
+                </div>
+                <div className="theme-error-modal-actions">
+                  <button className="theme-error-ok-btn" type="button" onClick={closeErrorModal}>OK</button>
                 </div>
               </div>
             </div>

@@ -38,13 +38,13 @@ function sanitizeTemplatePayload(payload = {}, existingThemeConfig = {}) {
   const mergedThemeConfig = {
     ...DEFAULT_THEME_CONFIG,
     ...(existingThemeConfig && typeof existingThemeConfig === 'object' ? existingThemeConfig : {}),
-    ...(payload.theme_config && typeof payload.theme_config === 'object' ? payload.theme_config : {}),
     ...(payload.primary_color !== undefined ? { primary_color: payload.primary_color } : {}),
     ...(payload.secondary_color !== undefined ? { secondary_color: payload.secondary_color } : {}),
     ...(payload.accent_color !== undefined ? { accent_color: payload.accent_color } : {}),
     ...(payload.accent_bg !== undefined ? { accent_bg: payload.accent_bg } : {}),
     ...(payload.navbar_bg !== undefined ? { navbar_bg: payload.navbar_bg } : {}),
     ...(payload.page_bg !== undefined ? { page_bg: payload.page_bg } : {}),
+    ...(payload.theme_config && typeof payload.theme_config === 'object' ? payload.theme_config : {}),
   };
 
   return {
