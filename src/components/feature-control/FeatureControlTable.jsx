@@ -98,7 +98,16 @@ export default function FeatureControlTable({
           {rows.map((row) => {
             const isBusy = !!togglingMap[row.feature_id];
             const isDisplayBusy = !!displayTogglingMap[row.feature_id];
-            const displaysInSidebar = row.display_in_app === 'sideBar';
+            const placementPolicy = row.display_placement_policy || {};
+            const displaysInSidebar = placementPolicy.locked
+              ? !!placementPolicy.displaysInSidebar
+              : String(row.display_in_app || 'home').trim().toLowerCase() === 'sidebar';
+            const isHomeOnly = placementPolicy.type === 'home-only';
+            const isSidebarOnly = placementPolicy.type === 'sidebar-only';
+            const placementLabel = isHomeOnly ? 'Home only' : isSidebarOnly ? 'Sidebar only' : '';
+            const placementMessage = placementPolicy.message || (
+              displaysInSidebar ? 'Display on home' : 'Display in sidebar'
+            );
             return (
               <tr key={`${row.feature_id}-${row.tier}`}>
                 <td data-label="Icon">
@@ -121,19 +130,36 @@ export default function FeatureControlTable({
                 <td className="fc-order-col" data-label="Quick Order">{row.quick_order ?? '-'}</td>
                 <td className="fc-sidebar-col" data-label="Sidebar">
                   {row.is_enabled ? (
-                    <button
-                      type="button"
-                      className={`fc-toggle ${displaysInSidebar ? 'on' : 'off'} ${isDisplayBusy ? 'busy' : ''}`}
-                      onClick={() => onDisplayInAppToggle(row, !displaysInSidebar)}
-                      disabled={isDisplayBusy || !onDisplayInAppToggle}
-                      aria-pressed={displaysInSidebar}
-                      aria-label={isDisplayBusy ? 'Saving sidebar display' : displaysInSidebar ? 'Display on home' : 'Display in sidebar'}
-                      title={isDisplayBusy ? 'Saving...' : displaysInSidebar ? 'Display on home' : 'Display in sidebar'}
+                    <div
+                      className="fc-placement-cell"
+                      title={isDisplayBusy ? 'Saving...' : placementMessage}
+                      onClick={() => {
+                        if (isHomeOnly && !isDisplayBusy && onDisplayInAppToggle) {
+                          onDisplayInAppToggle(row, false);
+                        }
+                      }}
                     >
-                      <span className="fc-toggle-track">
-                        <span className="fc-toggle-thumb" />
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        className={`fc-toggle ${displaysInSidebar ? 'on' : 'off'} ${isDisplayBusy ? 'busy' : ''} ${placementPolicy.locked ? 'locked' : ''}`}
+                        onClick={(event) => {
+                          if (isHomeOnly) {
+                            event.preventDefault();
+                            return;
+                          }
+                          onDisplayInAppToggle(row, !displaysInSidebar);
+                        }}
+                        disabled={isDisplayBusy || !onDisplayInAppToggle || isHomeOnly}
+                        aria-pressed={displaysInSidebar}
+                        aria-label={isDisplayBusy ? 'Saving sidebar display' : placementMessage}
+                        title={isDisplayBusy ? 'Saving...' : placementMessage}
+                      >
+                        <span className="fc-toggle-track">
+                          <span className="fc-toggle-thumb" />
+                        </span>
+                      </button>
+                      {placementLabel ? <span className="fc-placement-note">{placementLabel}</span> : null}
+                    </div>
                   ) : (
                     <span className="fc-muted-cell">-</span>
                   )}
