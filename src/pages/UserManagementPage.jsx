@@ -16,15 +16,30 @@ import './UserManagementPage.css';
 const EMPTY_FORM = {
   id: null,
   name: '',
+  email: '',
   mobile_no: '',
   secret_code: '',
 };
+
+function withImpliedView(row) {
+  const canAdd = !!row.can_add;
+  const canEdit = !!row.can_edit;
+  const canDelete = !!row.can_delete;
+
+  return {
+    ...row,
+    can_view: !!row.can_view || canAdd || canEdit || canDelete,
+    can_add: canAdd,
+    can_edit: canEdit,
+    can_delete: canDelete,
+  };
+}
 
 function buildPermissionRows(features = [], roles = []) {
   const roleByFeatureId = new Map((roles || []).map((role) => [String(role.feature_id), role]));
   return (features || []).map((feature) => {
     const linkedRole = roleByFeatureId.get(String(feature.id));
-    return {
+    return withImpliedView({
       feature_id: feature.id,
       feature_name: feature.name || 'Untitled Feature',
       feature_subname: feature.subname || '',
@@ -32,7 +47,7 @@ function buildPermissionRows(features = [], roles = []) {
       can_edit: !!linkedRole?.can_edit,
       can_delete: !!linkedRole?.can_delete,
       can_add: !!linkedRole?.can_add,
-    };
+    });
   });
 }
 
@@ -75,6 +90,7 @@ export default function UserManagementPage() {
     setForm({
       id: user.id,
       name: user.name || '',
+      email: user.email || '',
       mobile_no: user.mobile_no || '',
       secret_code:
         user.secret_code === null || user.secret_code === undefined
@@ -99,7 +115,7 @@ export default function UserManagementPage() {
 
     const [usersResult, featuresResult] = await Promise.all([
       fetchUsersByTrustId(trustId),
-      fetchFeatureCatalog(),
+      fetchFeatureCatalog(trustId),
     ]);
 
     if (usersResult.error) {
@@ -169,6 +185,24 @@ export default function UserManagementPage() {
     [permissionRows],
   );
 
+  const permissionColumnStates = useMemo(() => {
+    const total = permissionRows.length || 0;
+    const getState = (key) => {
+      const checkedCount = permissionRows.reduce((count, row) => count + (row[key] ? 1 : 0), 0);
+      return {
+        allChecked: total > 0 && checkedCount === total,
+        someChecked: checkedCount > 0 && checkedCount < total,
+      };
+    };
+
+    return {
+      can_view: getState('can_view'),
+      can_add: getState('can_add'),
+      can_edit: getState('can_edit'),
+      can_delete: getState('can_delete'),
+    };
+  }, [permissionRows]);
+
   function startCreateMode(openEditor = true) {
     setIsEditorVisible(openEditor);
     setSelectedUserId(null);
@@ -179,11 +213,21 @@ export default function UserManagementPage() {
 
   function handlePermissionToggle(featureId, key) {
     setPermissionRows((prev) =>
-      prev.map((row) =>
-        row.feature_id === featureId
-          ? { ...row, [key]: !row[key] }
-          : row,
-      ),
+      prev.map((row) => {
+        if (row.feature_id !== featureId) return row;
+
+        const nextRow = { ...row, [key]: !row[key] };
+        return withImpliedView(nextRow);
+      }),
+    );
+  }
+
+  function handleColumnToggle(key, checked) {
+    setPermissionRows((prev) =>
+      prev.map((row) => withImpliedView({
+        ...row,
+        [key]: checked,
+      })),
     );
   }
 
@@ -386,6 +430,16 @@ export default function UserManagementPage() {
                     </label>
 
                     <label>
+                      <span>Email</span>
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                        placeholder="Enter email address"
+                      />
+                    </label>
+
+                    <label>
                       <span>Mobile No.</span>
                       <input
                         type="text"
@@ -415,16 +469,64 @@ export default function UserManagementPage() {
                       <thead>
                         <tr>
                           <th>Feature</th>
-                          <th>View</th>
-                          <th>Add</th>
-                          <th>Edit</th>
-                          <th>Delete</th>
+                          <th>
+                            <label className="um-header-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={permissionColumnStates.can_view.allChecked}
+                                ref={(input) => {
+                                  if (input) input.indeterminate = permissionColumnStates.can_view.someChecked;
+                                }}
+                                onChange={(event) => handleColumnToggle('can_view', event.target.checked)}
+                              />
+                              <span>View</span>
+                            </label>
+                          </th>
+                          <th>
+                            <label className="um-header-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={permissionColumnStates.can_add.allChecked}
+                                ref={(input) => {
+                                  if (input) input.indeterminate = permissionColumnStates.can_add.someChecked;
+                                }}
+                                onChange={(event) => handleColumnToggle('can_add', event.target.checked)}
+                              />
+                              <span>Add</span>
+                            </label>
+                          </th>
+                          <th>
+                            <label className="um-header-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={permissionColumnStates.can_edit.allChecked}
+                                ref={(input) => {
+                                  if (input) input.indeterminate = permissionColumnStates.can_edit.someChecked;
+                                }}
+                                onChange={(event) => handleColumnToggle('can_edit', event.target.checked)}
+                              />
+                              <span>Edit</span>
+                            </label>
+                          </th>
+                          <th>
+                            <label className="um-header-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={permissionColumnStates.can_delete.allChecked}
+                                ref={(input) => {
+                                  if (input) input.indeterminate = permissionColumnStates.can_delete.someChecked;
+                                }}
+                                onChange={(event) => handleColumnToggle('can_delete', event.target.checked)}
+                              />
+                              <span>Delete</span>
+                            </label>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {!features.length ? (
                           <tr>
-                            <td colSpan={5} className="um-empty">No features available.</td>
+                            <td colSpan={5} className="um-empty">No enabled features available.</td>
                           </tr>
                         ) : (
                           permissionRows.map((row) => (

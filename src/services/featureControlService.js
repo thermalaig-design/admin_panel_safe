@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { cachedQuery, invalidateCache } from './requestCache';
 
 const MASTER_FEATURE_COLUMNS = 'id, name, subname, remarks, created_at, updated_at';
+const FEATURE_LOGO_BUCKET = (import.meta.env.VITE_FEATURE_LOGO_BUCKET || 'feature_logo').trim();
 const FLAG_COLUMNS = `
   id,
   features_id,
@@ -16,6 +17,7 @@ const FLAG_COLUMNS = `
   icon_url,
   route,
   quick_order,
+  display_in_app,
   created_at,
   updated_at
 `;
@@ -27,11 +29,56 @@ function normalizeText(value, fallback = '') {
   return text || fallback;
 }
 
+function normalizeOptionalText(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function sanitizePathSegment(value, fallback = 'item') {
+  return String(value || fallback)
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || fallback;
+}
+
 function isDuplicateError(error) {
   if (!error) return false;
   if (DUPLICATE_ERROR_CODES.has(String(error.code || ''))) return true;
   const message = String(error.message || '').toLowerCase();
   return message.includes('duplicate key') || message.includes('unique constraint');
+}
+
+export async function uploadFeatureLogo(file, { trustId, ownerId, type = 'feature' } = {}) {
+  if (!file) return { data: null, error: { message: 'No file provided' } };
+  if (!trustId) return { data: null, error: { message: 'No trust ID provided' } };
+
+  const extension = String(file.name || 'icon.png').split('.').pop()?.toLowerCase() || 'png';
+  const safeExt = extension.replace(/[^a-z0-9]/g, '') || 'png';
+  const safeTrustId = sanitizePathSegment(trustId, 'trust');
+  const safeOwnerId = sanitizePathSegment(ownerId, 'item');
+  const safeType = sanitizePathSegment(type, 'feature');
+  const path = `${safeTrustId}/${safeType}/${safeOwnerId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${safeExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(FEATURE_LOGO_BUCKET)
+    .upload(path, file, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: file.type || undefined,
+    });
+
+  if (uploadError) return { data: null, error: uploadError };
+
+  const { data: publicData } = supabase.storage.from(FEATURE_LOGO_BUCKET).getPublicUrl(path);
+  return {
+    data: {
+      bucket: FEATURE_LOGO_BUCKET,
+      path,
+      publicUrl: publicData?.publicUrl || '',
+    },
+    error: null,
+  };
 }
 
 function buildDefaultFeatureFlagPayload({ feature, trustId, tier, isEnabled = false, trustName = '', overrides = {} }) {
@@ -40,7 +87,7 @@ function buildDefaultFeatureFlagPayload({ feature, trustId, tier, isEnabled = fa
     trust_id: trustId,
     tier,
     is_enabled: !!isEnabled,
-    display_name: normalizeText(overrides.display_name, feature.name || ''),
+    display_name: normalizeOptionalText(overrides.display_name),
     name: normalizeText(overrides.name, feature.name || ''),
     tagline: normalizeText(overrides.tagline, feature.subname || ''),
     description: normalizeText(overrides.description, ''),
@@ -51,6 +98,7 @@ function buildDefaultFeatureFlagPayload({ feature, trustId, tier, isEnabled = fa
       overrides.quick_order === null || overrides.quick_order === undefined || overrides.quick_order === ''
         ? null
         : Number(overrides.quick_order),
+    display_in_app: normalizeText(overrides.display_in_app, 'home'),
   };
 }
 
@@ -114,11 +162,12 @@ export function mergeFeaturesWithFlags(masterFeatures, featureFlags, trustId, ti
       tier,
       flag_id: flag?.id || null,
       is_enabled: flag?.is_enabled ?? false,
-      display_name: normalizeText(flag?.display_name, feature.name || ''),
+      display_name: normalizeOptionalText(flag?.display_name),
       tagline: normalizeText(flag?.tagline, feature.subname || ''),
       icon_url: normalizeText(flag?.icon_url, ''),
       route: normalizeText(flag?.route, ''),
       quick_order: flag?.quick_order ?? null,
+      display_in_app: normalizeText(flag?.display_in_app, 'home'),
       name: normalizeText(flag?.name, feature.name || ''),
       description: normalizeText(flag?.description, ''),
       trust_name: normalizeText(flag?.trust_name, ''),
@@ -163,6 +212,7 @@ export async function createFeatureFlagIfMissing({ feature, trustId, tier, isEna
 
   if (!insertError) {
     invalidateCache('feature-control:flags:');
+    invalidateCache('user-management:enabled-features:');
     return { data: inserted, error: null };
   }
 
@@ -192,7 +242,10 @@ export async function updateFeatureFlagById(flagId, updates) {
     .select(FLAG_COLUMNS)
     .single();
 
-  if (!error) invalidateCache('feature-control:flags:');
+  if (!error) {
+    invalidateCache('feature-control:flags:');
+    invalidateCache('user-management:enabled-features:');
+  }
   return { data, error };
 }
 
@@ -257,11 +310,12 @@ export function mergeSingleFeatureWithFlag(mergedFeature, flag) {
     trust_id: flag.trust_id,
     tier: flag.tier,
     is_enabled: flag.is_enabled ?? false,
-    display_name: normalizeText(flag.display_name, mergedFeature.master_name || ''),
+    display_name: normalizeOptionalText(flag.display_name),
     tagline: normalizeText(flag.tagline, mergedFeature.master_subname || ''),
     icon_url: normalizeText(flag.icon_url, ''),
     route: normalizeText(flag.route, ''),
     quick_order: flag.quick_order ?? null,
+    display_in_app: normalizeText(flag.display_in_app, 'home'),
     name: normalizeText(flag.name, mergedFeature.master_name || ''),
     description: normalizeText(flag.description, ''),
     trust_name: normalizeText(flag.trust_name, ''),

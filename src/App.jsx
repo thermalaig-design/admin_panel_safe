@@ -25,19 +25,31 @@ const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
 const FacilitiesPage = lazy(() => import('./pages/FacilitiesPage'));
 const ContactUsPage = lazy(() => import('./pages/ContactUsPage'));
 const DonationsPage = lazy(() => import('./pages/DonationsPage'));
-const ThemePage = lazy(() => import('./pages/ThemePage'));
+const ThemePage = lazy(() => import('./pages/theme/ThemePage'));
 const FeatureControlPage = lazy(() => import('./pages/FeatureControlPage'));
 const SubFeatureControlPage = lazy(() => import('./pages/SubFeatureControlPage'));
 const Features20Page = lazy(() => import('./pages/Features20Page'));
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage'));
 const SocialMediaPage = lazy(() => import('./pages/SocialMediaPage'));
 const ProductPage = lazy(() => import('./pages/ProductPage'));
+const WhatsappPage = lazy(() => import('./pages/whatsapp/WhatsappPage'));
+const ServiceProviderPage = lazy(() => import('./pages/whatsapp/ServiceProviderPage'));
+const WhatsappMediaPage = lazy(() => import('./pages/whatsapp/WhatsappMediaPage'));
+const WhatsappTemplatePage = lazy(() => import('./pages/whatsapp/WhatsappTemplatePage'));
+const WaCampPage = lazy(() => import('./pages/whatsapp/WaCampPage'));
+const WaCampAudiencePage = lazy(() => import('./pages/whatsapp/WaCampAudiencePage'));
+const BankDetailsPage = lazy(() => import('./pages/BankDetailsPage'));
 const CreateVideoPage = lazy(() => import('./pages/CreateVideoPage'));
 const ShareAppPage = lazy(() => import('./pages/ShareAppPage'));
 const AchievementsPage = lazy(() => import('./pages/AchievementsPage'));
 const LinkedTrustsPage = lazy(() => import('./pages/LinkedTrustsPage'));
 const NominationsPage = lazy(() => import('./pages/NominationsPage'));
 const MemberImportPage = lazy(() => import('./components/MemberImport'));
+const SalesMarketingPage = lazy(() => import('./pages/SalesMarketingPage'));
+const LeadManagementPage = lazy(() => import('./pages/LeadManagementPage'));
+const LeadDetailsPage = lazy(() => import('./pages/LeadDetailsPage'));
+const CampaignPage = lazy(() => import('./pages/CampaignPage'));
+const AddLeadsPage = lazy(() => import('./pages/AddLeadsPage'));
 
 function App() {
   return (
@@ -93,10 +105,32 @@ function App() {
           <Route path="/sub-feature-control" element={<SubFeatureControlPage />} />
           <Route path="/features-2-o" element={<Features20Page />} />
           <Route path="/user-management" element={<UserManagementPage />} />
+          <Route path="/sales-marketing" element={<SalesMarketingPage />} />
+          <Route path="/sales-marketing/campaign" element={<CampaignPage />} />
+          <Route path="/sales-marketing/add-leads" element={<AddLeadsPage />} />
+          <Route path="/sales-marketing/leads" element={<LeadManagementPage />} />
+          <Route path="/sales-marketing/leads/details" element={<LeadDetailsPage />} />
           <Route path="/social-media" element={<SocialMediaPage />} />
           <Route path="/social-media/accounts-details" element={<SocialMediaPage />} />
           <Route path="/social-media/create" element={<SocialMediaPage />} />
           <Route path="/social-media/product" element={<ProductPage />} />
+          <Route path="/whatsapp" element={<WhatsappPage />} />
+          <Route path="/whatsapp/service-provider" element={<ServiceProviderPage />} />
+          <Route path="/whatsapp/service-provider/create" element={<ServiceProviderPage />} />
+          <Route path="/whatsapp/service-provider/edit" element={<ServiceProviderPage />} />
+          <Route path="/whatsapp/media" element={<WhatsappMediaPage />} />
+          <Route path="/whatsapp/media/create" element={<WhatsappMediaPage />} />
+          <Route path="/whatsapp/media/edit" element={<WhatsappMediaPage />} />
+          <Route path="/whatsapp/template" element={<WhatsappTemplatePage />} />
+          <Route path="/whatsapp/template/create" element={<WhatsappTemplatePage />} />
+          <Route path="/whatsapp/template/edit" element={<WhatsappTemplatePage />} />
+          <Route path="/whatsapp/campaign" element={<WaCampPage />} />
+          <Route path="/whatsapp/campaign/create" element={<WaCampPage />} />
+          <Route path="/whatsapp/campaign/edit" element={<WaCampPage />} />
+          <Route path="/whatsapp/audience" element={<WaCampAudiencePage />} />
+          <Route path="/company-details/bank-details" element={<BankDetailsPage />} />
+          <Route path="/company-details/bank-details/create" element={<BankDetailsPage />} />
+          <Route path="/company-details/bank-details/edit" element={<BankDetailsPage />} />
           <Route path="/video/create" element={<CreateVideoPage />} />
           <Route path="/share-app" element={<ShareAppPage />} />
           <Route path="/achievements" element={<AchievementsPage />} />

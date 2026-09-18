@@ -38,19 +38,20 @@ function sanitizeTemplatePayload(payload = {}, existingThemeConfig = {}) {
   const mergedThemeConfig = {
     ...DEFAULT_THEME_CONFIG,
     ...(existingThemeConfig && typeof existingThemeConfig === 'object' ? existingThemeConfig : {}),
-    ...(payload.theme_config && typeof payload.theme_config === 'object' ? payload.theme_config : {}),
     ...(payload.primary_color !== undefined ? { primary_color: payload.primary_color } : {}),
     ...(payload.secondary_color !== undefined ? { secondary_color: payload.secondary_color } : {}),
     ...(payload.accent_color !== undefined ? { accent_color: payload.accent_color } : {}),
     ...(payload.accent_bg !== undefined ? { accent_bg: payload.accent_bg } : {}),
     ...(payload.navbar_bg !== undefined ? { navbar_bg: payload.navbar_bg } : {}),
     ...(payload.page_bg !== undefined ? { page_bg: payload.page_bg } : {}),
+    ...(payload.theme_config && typeof payload.theme_config === 'object' ? payload.theme_config : {}),
   };
 
   return {
     ...(payload.name !== undefined ? { name: payload.name } : {}),
     ...(payload.description !== undefined ? { description: payload.description } : {}),
     ...(payload.home_layout !== undefined ? { home_layout: payload.home_layout || DEFAULT_HOME_LAYOUT } : {}),
+    ...(payload.home_layout_modes !== undefined ? { home_layout_modes: payload.home_layout_modes || {} } : {}),
     ...(payload.animations !== undefined ? { animations: payload.animations || DEFAULT_ANIMATIONS } : {}),
     ...(payload.custom_css !== undefined ? { custom_css: payload.custom_css || '' } : {}),
     ...(payload.template_key !== undefined ? { template_key: payload.template_key || 'mahila' } : {}),

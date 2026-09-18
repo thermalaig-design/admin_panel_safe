@@ -52,7 +52,9 @@ export default function FeatureControlTable({
   rows,
   loading,
   togglingMap,
+  displayTogglingMap = {},
   onToggle,
+  onDisplayInAppToggle,
   onEdit,
   onOpenSubScreens,
 }) {
@@ -77,7 +79,7 @@ export default function FeatureControlTable({
 
   return (
     <div className="fc-table-wrap">
-      <table className="fc-table">
+      <table className="fc-table fc-feature-table">
         <thead>
           <tr>
             <th>Icon</th>
@@ -85,8 +87,8 @@ export default function FeatureControlTable({
             <th>Display Name</th>
             <th>Tagline</th>
             <th>Route</th>
-            <th>Tier</th>
             <th>Quick Order</th>
+            <th>Display</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -94,6 +96,17 @@ export default function FeatureControlTable({
         <tbody>
           {rows.map((row) => {
             const isBusy = !!togglingMap[row.feature_id];
+            const isDisplayBusy = !!displayTogglingMap[row.feature_id];
+            const placementPolicy = row.display_placement_policy || {};
+            const displaysInSidebar = placementPolicy.locked
+              ? !!placementPolicy.displaysInSidebar
+              : String(row.display_in_app || 'home').trim().toLowerCase() === 'sidebar';
+            const isHomeOnly = placementPolicy.type === 'home-only';
+            const isSidebarOnly = placementPolicy.type === 'sidebar-only';
+            const placementLabel = isHomeOnly ? 'Home only' : isSidebarOnly ? 'Sidebar only' : '';
+            const placementMessage = placementPolicy.message || (
+              displaysInSidebar ? 'Display on home' : 'Display in sidebar'
+            );
             return (
               <tr key={`${row.feature_id}-${row.tier}`}>
                 <td data-label="Icon">
@@ -110,10 +123,53 @@ export default function FeatureControlTable({
                 <td className="fc-display-col" data-label="Display Name">{row.display_name || '-'}</td>
                 <td className="fc-tagline-col" data-label="Tagline">{row.tagline || '-'}</td>
                 <td className="fc-route-col" data-label="Route">{row.route || '-'}</td>
-                <td className="fc-tier-col" data-label="Tier">
-                  <span className="fc-pill">{row.tier}</span>
-                </td>
                 <td className="fc-order-col" data-label="Quick Order">{row.quick_order ?? '-'}</td>
+                <td className="fc-sidebar-col" data-label="Display">
+                  {row.is_enabled ? (
+                    <div
+                      className="fc-placement-cell"
+                      title={isDisplayBusy ? 'Saving...' : placementMessage}
+                      onClick={() => {
+                        if (isHomeOnly && !isDisplayBusy && onDisplayInAppToggle) {
+                          onDisplayInAppToggle(row, false);
+                        }
+                      }}
+                    >
+                      <div
+                        className={`fc-display-switch ${isDisplayBusy ? 'busy' : ''} ${placementPolicy.locked ? 'locked' : ''}`}
+                        role="group"
+                        aria-label={isDisplayBusy ? 'Saving display placement' : placementMessage}
+                        title={isDisplayBusy ? 'Saving...' : placementMessage}
+                      >
+                        <button
+                          type="button"
+                          className={`fc-display-option ${!displaysInSidebar ? 'active' : ''}`}
+                          onClick={() => {
+                            if (!isHomeOnly && displaysInSidebar) onDisplayInAppToggle(row, false);
+                          }}
+                          disabled={isDisplayBusy || !onDisplayInAppToggle || placementPolicy.locked}
+                          aria-pressed={!displaysInSidebar}
+                        >
+                          Home
+                        </button>
+                        <button
+                          type="button"
+                          className={`fc-display-option ${displaysInSidebar ? 'active' : ''}`}
+                          onClick={() => {
+                            if (!isSidebarOnly && !displaysInSidebar) onDisplayInAppToggle(row, true);
+                          }}
+                          disabled={isDisplayBusy || !onDisplayInAppToggle || placementPolicy.locked}
+                          aria-pressed={displaysInSidebar}
+                        >
+                          Sidebar
+                        </button>
+                      </div>
+                      {placementLabel ? <span className="fc-placement-note">{placementLabel}</span> : null}
+                    </div>
+                  ) : (
+                    <span className="fc-muted-cell">-</span>
+                  )}
+                </td>
                 <td className="fc-status-col" data-label="Status">
                   <div className="fc-status-stack">
                     <button
