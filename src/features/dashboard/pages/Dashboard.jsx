@@ -1,3 +1,5 @@
+import ThemeToggle from '../../../core/components/ThemeToggle';
+import { NAV_SECTION_PATHS, sectionKeyFromPath } from '../../../core/utils/navSections';
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Dashboard.css';
@@ -6,7 +8,7 @@ import { warmupTrustData } from '../../../core/services/warmupService';
 import { fetchNoticeboardByTrust } from '../../extra/services/noticeboardService';
 import { fetchEventsByTrust } from '../../extra/services/eventsService';
 import { fetchNotificationsByTrustId } from '../../../core/services/notificationsService';
-import { fetchDashboardByTrustId } from '../services/dashboardService';
+import { fetchDashboardByTrustId, fetchMemberCreationStats, fetchMemberCreationPage } from '../services/dashboardService';
 import Sidebar from '../../../core/components/Sidebar';
 
 // ── Export reusable icon renderer component ───────────────────────────────────
@@ -265,12 +267,25 @@ const MODULE_CARDS = [
       </svg>
     ),
   },
+  {
+    id: 'card-trust-insights',
+    label: 'Trust Insights',
+    description: 'Total trusts created and recent trust activity',
+    route: '/trust-insights',
+    gradient: 'linear-gradient(135deg, #7C3AED 0%, #2563EB 100%)',
+    icon: (
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+        <rect x="3.5" y="4" width="17" height="16" rx="2.6" stroke="white" strokeWidth="1.8" fill="rgba(255,255,255,0.16)" />
+        <path d="M8 16v-3M12 16V9M16 16v-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+  },
 ];
 
 const APP_DESIGN_CARD_IDS = new Set(['card-theme', 'card-feature-control', 'card-sub-feature-control', 'card-features-2-o']);
 const COMPANY_DETAILS_CARD_IDS = new Set(['card-trust', 'card-social-media-account-details', 'card-create-video', 'card-bank-details']);
 const DASHBOARD_CARD_IDS = new Set();
-const EXTRA_CARD_IDS = new Set(['card-linked-trusts', 'card-nominations', 'card-bulk-members-upload']);
+const EXTRA_CARD_IDS = new Set(['card-linked-trusts', 'card-nominations', 'card-bulk-members-upload', 'card-trust-insights']);
 const MENU_MODULE_CARDS = [
   {
     id: 'menu-card-my-family',
@@ -288,15 +303,16 @@ const MENU_MODULE_CARDS = [
     ),
   },
   {
-    id: 'menu-card-other-membership',
-    label: 'Other Membership',
-    description: 'View other memberships',
-    route: '/other-membership',
+    id: 'menu-card-user-analytics',
+    label: 'User Analytics',
+    description: 'View user activity and usage analytics',
+    route: '/user-analytics',
     gradient: 'linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)',
     icon: (
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
-        <rect x="4" y="5" width="16" height="14" rx="2.3" stroke="white" strokeWidth="1.8" />
-        <path d="M8 10h8M8 14h5" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="9" cy="8.5" r="2.6" stroke="white" strokeWidth="1.8" />
+        <path d="M4 18c0-2.6 2.2-4.6 5-4.6s5 2 5 4.6" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M15.5 17v-3M18 17v-6M20.5 17v-4" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -317,6 +333,38 @@ const initials = (name = '') =>
 const todayStr = new Date().toLocaleDateString('en-IN', {
   weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
 });
+
+// ── Member Creation Insights helpers (local calendar dates, 'YYYY-MM-DD') ────
+const MEMBER_DATE_PRESETS = [
+  { key: 'today', label: 'Today' },
+  { key: 'last7days', label: 'Last 7 Days' },
+  { key: 'last30days', label: 'Last 30 Days' },
+  { key: 'custom', label: 'Custom Range' },
+];
+
+const toLocalDateInput = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const getPresetRange = (preset) => {
+  const today = new Date();
+  const start = new Date(today);
+  if (preset === 'last7days') start.setDate(start.getDate() - 6);
+  if (preset === 'last30days') start.setDate(start.getDate() - 29);
+  return { from: toLocalDateInput(start), to: toLocalDateInput(today) };
+};
+
+const formatDateTime = (input) => {
+  if (!input) return '--';
+  const parsed = new Date(input);
+  if (Number.isNaN(parsed.getTime())) return '--';
+  return parsed.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
 
 // �� Feature card icon renderer ������������������������������������������������
 // Priority: route-based SVG ? name-based SVG ? generic grid
@@ -565,16 +613,11 @@ export default function Dashboard() {
   const trustName = activeTrust?.name || trust?.name || 'No Trust Selected';
 
   const [searchFocused, setSearchFocused] = useState(false);
+  // Member insight cards can be collapsed on mobile (toggle is hidden on desktop)
+  const [memberCardsOpen, setMemberCardsOpen] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [liveNotices, setLiveNotices] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
-  const [dashboardStats, setDashboardStats] = useState({
-    totalMembers: 0,
-    appDownloads: 0,
-    liveEvents: 0,
-    panelUsers: 0,
-    liveAppUsers: 0,
-  });
   const [communityStats, setCommunityStats] = useState({
     postsOnSocialMedia: 0,
     galleryUploads: 0,
@@ -591,8 +634,27 @@ export default function Dashboard() {
   const [activeUsersSeries, setActiveUsersSeries] = useState([0, 0, 0, 0, 0, 0]);
   const [liveFeed, setLiveFeed] = useState([]);
 
+  // Member creation insights for Members associated with the selected trust
+  const [memberDatePreset, setMemberDatePreset] = useState('last7days');
+  const [memberFromDate, setMemberFromDate] = useState(() => getPresetRange('last7days').from);
+  const [memberToDate, setMemberToDate] = useState(() => getPresetRange('last7days').to);
+  // Last settled response, tagged with the range it was fetched for
+  const [memberCreationResult, setMemberCreationResult] = useState({ rangeKey: '', stats: null, error: '' });
+  const memberRangeInvalid = !memberFromDate || !memberToDate || memberFromDate > memberToDate;
+  const memberRangeKey = `${trustId}|${memberFromDate}|${memberToDate}`;
+  // Never show another trust's numbers while a new trust is loading
+  // Members table: server-side pagination. Page is tied to the range so a new range starts on page 1.
+  const [memberPageState, setMemberPageState] = useState({ rangeKey: '', page: 1 });
+  const [memberPageSize, setMemberPageSize] = useState(10);
+  const [memberRowsResult, setMemberRowsResult] = useState({ key: '', rows: [], error: '' });
+  // Live member count (same source as the Total Members card); falls back to the stored dashboard value
+  const memberCreationStats = memberCreationResult.rangeKey.startsWith(`${trustId}|`) ? memberCreationResult.stats : null;
+  const memberCreationError = memberCreationResult.rangeKey === memberRangeKey ? memberCreationResult.error : '';
+
   const userInitials = initials(userName);
-  const currentSidebarNavKey = location.state?.sidebarNavKey || 'dashboard';
+  // The section comes from the route (/menu, /extra, ...). Old links to /dashboard that still carry
+  // state.sidebarNavKey keep working: they render that section and are redirected below.
+  const currentSidebarNavKey = sectionKeyFromPath(location.pathname) || location.state?.sidebarNavKey || 'dashboard';
   const pageTitle = NAV_SECTION_TITLES[currentSidebarNavKey] || 'Dashboard';
 
   const scopedModules = useMemo(() => {
@@ -625,13 +687,6 @@ export default function Dashboard() {
       return label.includes(query) || description.includes(query);
     });
   }, [searchTerm, scopedModules]);
-  const dashboardSummaryCards = [
-    { label: 'Total Members', value: String(dashboardStats.totalMembers || 0), note: `${dashboardStats.totalMembers || 0} registered`, tone: 'violet' },
-    { label: 'App Downloads', value: String(dashboardStats.appDownloads || 0), note: 'From panel data', tone: 'green' },
-    { label: 'Live Events', value: String(dashboardStats.liveEvents || 0), note: 'Upcoming / active', tone: 'orange' },
-    { label: 'Panel Users', value: String(dashboardStats.panelUsers || 0), note: 'Active on panel', tone: 'pink' },
-    { label: 'Live App Users', value: String(dashboardStats.liveAppUsers || 0), note: 'Estimated', tone: 'cyan' },
-  ];
   const formatDayMonth = (input) => {
     if (!input) return '--';
     const parsed = new Date(input);
@@ -727,13 +782,6 @@ export default function Dashboard() {
       const notifications = Array.isArray(notificationsRes?.data) ? notificationsRes.data : [];
       const dashboardRow = dashboardRes?.data || null;
 
-      setDashboardStats({
-        totalMembers: Number(dashboardRow?.total_members ?? 0),
-        appDownloads: Number(dashboardRow?.app_downloads ?? 0),
-        liveEvents: Number(dashboardRow?.live_events ?? 0),
-        panelUsers: Number(dashboardRow?.panel_users ?? 0),
-        liveAppUsers: Number(dashboardRow?.live_app_users ?? 0),
-      });
       setGovernanceStats({
         electedMembers: Number(dashboardRow?.elected_members ?? 0),
         committeeMembers: Number(dashboardRow?.committee_members ?? 0),
@@ -784,6 +832,109 @@ export default function Dashboard() {
     };
   }, [trustId]);
 
+  // Member Creation Insights: keyed on trust + date range (string deps → no duplicate fetches)
+  const isOverviewDashboard = currentSidebarNavKey === 'dashboard';
+  const memberCreationLoading = Boolean(trustId) && isOverviewDashboard && !memberRangeInvalid && memberCreationResult.rangeKey !== memberRangeKey;
+  useEffect(() => {
+    if (!trustId || !isOverviewDashboard || memberRangeInvalid) return undefined;
+    let cancelled = false;
+    const rangeKey = `${trustId}|${memberFromDate}|${memberToDate}`;
+
+    (async () => {
+      let result;
+      try {
+        const { data, error } = await fetchMemberCreationStats({ trustId, from: memberFromDate, to: memberToDate, recentLimit: 1 });
+        result = error || !data
+          ? { rangeKey, stats: null, error: error?.message || 'Unable to load member creation stats.' }
+          : { rangeKey, stats: data, error: '' };
+      } catch (err) {
+        result = { rangeKey, stats: null, error: err?.message || 'Unable to load member creation stats.' };
+      }
+      if (!cancelled) setMemberCreationResult(result);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trustId, isOverviewDashboard, memberFromDate, memberToDate, memberRangeInvalid]);
+
+  const handleMemberPresetChange = (preset) => {
+    setMemberDatePreset(preset);
+    if (preset === 'custom') return; // keep the current range as the custom starting point
+    const range = getPresetRange(preset);
+    setMemberFromDate(range.from);
+    setMemberToDate(range.to);
+  };
+
+  const memberCreationCards = [
+    {
+      label: 'Total Members',
+      value: memberCreationStats ? String(memberCreationStats.totalMembers) : '--',
+      note: 'Linked to this trust',
+      tone: 'violet',
+    },
+    {
+      label: 'Created Today',
+      value: memberCreationStats ? String(memberCreationStats.createdToday) : '--',
+      note: 'Since local midnight',
+      tone: 'green',
+    },
+    {
+      label: 'Selected Period',
+      value: memberCreationStats ? String(memberCreationStats.createdInPeriod) : '--',
+      note: memberRangeInvalid ? 'Invalid range' : `${formatDayMonth(`${memberFromDate}T00:00:00`)} – ${formatDayMonth(`${memberToDate}T00:00:00`)}`,
+      tone: 'orange',
+    },
+    {
+      label: 'Last Member Created',
+      value: memberCreationStats?.lastCreatedAt ? formatDateTime(memberCreationStats.lastCreatedAt) : '--',
+      note: !memberCreationStats
+        ? ''
+        : (!memberCreationStats.lastMember
+          ? 'No members yet'
+          : (memberCreationStats.lastMember.name || memberCreationStats.lastMember.mobile || 'Name not set')),
+      tone: 'cyan',
+      compact: true,
+    },
+  ];
+
+  const governanceTotal = memberCreationStats?.totalMembers ?? governanceStats.total;
+  const memberPage = memberPageState.rangeKey === memberRangeKey ? memberPageState.page : 1;
+  const memberPeriodTotal = memberCreationStats?.createdInPeriod ?? 0;
+  const memberTotalPages = Math.max(Math.ceil(memberPeriodTotal / memberPageSize), 1);
+  const memberSafePage = Math.min(memberPage, memberTotalPages);
+  const memberRowsKey = `${memberRangeKey}|${memberSafePage}|${memberPageSize}`;
+  const memberRowsLoading = Boolean(trustId) && isOverviewDashboard && !memberRangeInvalid && memberRowsResult.key !== memberRowsKey;
+  // Keep the previous page on screen (dimmed) while the next one loads, to avoid flicker
+  const memberRows = memberRowsResult.rows;
+  const memberRowsError = memberRowsResult.key === memberRowsKey ? memberRowsResult.error : '';
+  const setMemberPage = (page) => setMemberPageState({ rangeKey: memberRangeKey, page });
+
+  useEffect(() => {
+    if (!trustId || !isOverviewDashboard || memberRangeInvalid) return undefined;
+    let cancelled = false;
+    const key = memberRowsKey;
+
+    (async () => {
+      let result;
+      try {
+        const { data, error } = await fetchMemberCreationPage({
+          trustId, from: memberFromDate, to: memberToDate, page: memberSafePage, pageSize: memberPageSize,
+        });
+        result = error || !data
+          ? { key, rows: [], error: error?.message || 'Unable to load members.' }
+          : { key, rows: data, error: '' };
+      } catch (err) {
+        result = { key, rows: [], error: err?.message || 'Unable to load members.' };
+      }
+      if (!cancelled) setMemberRowsResult(result);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trustId, isOverviewDashboard, memberRangeInvalid, memberRowsKey, memberFromDate, memberToDate, memberSafePage, memberPageSize]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (trustId) {
@@ -815,6 +966,14 @@ export default function Dashboard() {
       if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [trustId]);
+
+  // Legacy navigation: '/dashboard' + state.sidebarNavKey -> the section's own route
+  useEffect(() => {
+    if (location.pathname !== '/dashboard') return;
+    const legacyKey = location.state?.sidebarNavKey;
+    const target = legacyKey && legacyKey !== 'dashboard' ? NAV_SECTION_PATHS[legacyKey] : null;
+    if (target) navigate(target, { replace: true, state: location.state });
+  }, [location.pathname, location.state, navigate]);
 
   // If no trust is linked, redirect
   useEffect(() => {
@@ -876,6 +1035,8 @@ export default function Dashboard() {
               <span className="search-kbd">⌘K</span>
             </div>
 
+            <ThemeToggle />
+
             <button className="topbar-icon-btn" title="Notifications">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -933,25 +1094,154 @@ export default function Dashboard() {
                 <p>Key highlights for {activeTrust?.name || 'your trust'}</p>
               </div>
 
-              <div className="dp-kpis">
-                {dashboardSummaryCards.map((item) => (
-                  <article key={item.label} className={`dp-kpi dp-${item.tone}`}>
-                    <div className="dp-kpi-title">{item.label}</div>
-                    <div className="dp-kpi-value">{item.value}</div>
-                    <div className="dp-kpi-note">{item.note}</div>
-                  </article>
-                ))}
-              </div>
+              <article className="dp-card dp-mci">
+                <div className="dp-card-head dp-mci-head">
+                  <div>
+                    <h3>Member Creation Insights</h3>
+                    <span>Members of {activeTrust?.name || 'this trust'} · based on creation date</span>
+                  </div>
+                  <div className="dp-mci-presets" role="group" aria-label="Member creation date range">
+                    {MEMBER_DATE_PRESETS.map((preset) => (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        className={memberDatePreset === preset.key ? 'is-active' : ''}
+                        aria-pressed={memberDatePreset === preset.key}
+                        onClick={() => handleMemberPresetChange(preset.key)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {memberDatePreset === 'custom' && (
+                  <div className="dp-mci-range">
+                    <label>
+                      <span>From</span>
+                      <input
+                        type="date"
+                        value={memberFromDate}
+                        max={memberToDate || undefined}
+                        onChange={(event) => setMemberFromDate(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>To</span>
+                      <input
+                        type="date"
+                        value={memberToDate}
+                        min={memberFromDate || undefined}
+                        onChange={(event) => setMemberToDate(event.target.value)}
+                      />
+                    </label>
+                    {memberRangeInvalid && (
+                      <div className="dp-mci-invalid">Please choose a valid range — From must be on or before To.</div>
+                    )}
+                  </div>
+                )}
+
+                {memberCreationError && !memberCreationLoading && (
+                  <div className="dp-mci-error">Couldn&apos;t load member creation stats: {memberCreationError}</div>
+                )}
+
+                <button
+                  type="button"
+                  className="dp-mci-toggle"
+                  aria-expanded={memberCardsOpen}
+                  onClick={() => setMemberCardsOpen((open) => !open)}
+                >
+                  {memberCardsOpen ? 'Hide summary cards' : 'Show summary cards'}
+                  <span aria-hidden="true">{memberCardsOpen ? '▲' : '▼'}</span>
+                </button>
+
+                <div
+                  className={`dp-kpis dp-mci-kpis ${memberCreationLoading ? 'is-loading' : ''} ${memberCardsOpen ? '' : 'is-collapsed'}`}
+                  aria-busy={memberCreationLoading}
+                >
+                  {memberCreationCards.map((item) => (
+                    <div key={item.label} className={`dp-kpi dp-${item.tone}`}>
+                      <div className="dp-kpi-title">{item.label}</div>
+                      <div className={`dp-kpi-value ${item.compact ? 'dp-kpi-value-sm' : ''}`}>
+                        {memberCreationLoading && !memberCreationStats ? '…' : item.value}
+                      </div>
+                      <div className="dp-kpi-note">{item.note}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="dp-mci-recent">
+                  <div className="dp-mci-recent-title">
+                    Members Created {(memberCreationLoading || memberRowsLoading) && <em>Loading…</em>}
+                  </div>
+                  {memberRowsError && !memberRowsLoading && (
+                    <div className="dp-mci-error">Couldn&apos;t load members: {memberRowsError}</div>
+                  )}
+                  {!memberCreationLoading && !memberRowsLoading && !memberRowsError && memberCreationStats && memberPeriodTotal === 0 && (
+                    <div className="dp-empty-note">No Members were created in the selected period.</div>
+                  )}
+                  {memberRows.length > 0 && (
+                    <div className={`dp-mci-table-wrap ${memberRowsLoading ? 'is-loading' : ''}`}>
+                      <table className="dp-mci-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Mobile</th>
+                            <th>Created At</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {memberRows.map((member) => (
+                            <tr key={member.members_id ?? `${member.mobile}-${member.created_at}`}>
+                              <td>{member.name || 'Guest Member'}</td>
+                              <td>
+                                {member.mobile
+                                  ? <a className="dp-mci-call" href={`tel:${String(member.mobile).replace(/[^\d+]/g, '')}`}>{member.mobile}</a>
+                                  : '—'}
+                              </td>
+                              <td>{formatDateTime(member.created_at)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {memberPeriodTotal > 0 && (
+                    <div className="dp-mci-pager">
+                      <label className="dp-mci-size">
+                        Show
+                        <select
+                          value={memberPageSize}
+                          onChange={(event) => { setMemberPageSize(Number(event.target.value)); setMemberPage(1); }}
+                        >
+                          {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                        per page
+                      </label>
+                      <span className="dp-mci-showing">
+                        {memberRows.length > 0
+                          ? `Showing ${(memberSafePage - 1) * memberPageSize + 1} – ${(memberSafePage - 1) * memberPageSize + memberRows.length} of ${memberPeriodTotal}`
+                          : `${memberPeriodTotal} members`}
+                      </span>
+                      <div className="dp-mci-pages">
+                        <button type="button" disabled={memberSafePage <= 1 || memberRowsLoading} onClick={() => setMemberPage(memberSafePage - 1)}>‹ Previous</button>
+                        <span>Page {memberSafePage} of {memberTotalPages}</span>
+                        <button type="button" disabled={memberSafePage >= memberTotalPages || memberRowsLoading} onClick={() => setMemberPage(memberSafePage + 1)}>Next ›</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </article>
 
               <div className="dp-grid">
                 <article className="dp-card">
                   <div className="dp-card-head">
                     <h3>Governance Overview</h3>
-                    <span>{governanceStats.total} total</span>
+                    <span>{governanceTotal} total</span>
                   </div>
                   <div className="dp-donut-row gov">
                     <div className="dp-donut gov">
-                      <strong>{governanceStats.total}</strong>
+                      <strong>{governanceTotal}</strong>
                       <span>Total Members</span>
                     </div>
                     <div className="dp-list gov">
@@ -959,19 +1249,19 @@ export default function Dashboard() {
                         <div className="dp-list-meta"><span className="dot purple" /> Elected Members</div>
                         <b>{governanceStats.electedMembers}</b>
                       </div>
-                      <div className="dp-meter"><span style={{ width: `${governanceStats.total ? (governanceStats.electedMembers / governanceStats.total) * 100 : 0}%` }} className="meter-purple" /></div>
+                      <div className="dp-meter"><span style={{ width: `${governanceTotal ? (governanceStats.electedMembers / governanceTotal) * 100 : 0}%` }} className="meter-purple" /></div>
 
                       <div className="dp-list-row">
                         <div className="dp-list-meta"><span className="dot gold" /> Committee Members</div>
                         <b>{governanceStats.committeeMembers}</b>
                       </div>
-                      <div className="dp-meter"><span style={{ width: `${governanceStats.total ? (governanceStats.committeeMembers / governanceStats.total) * 100 : 0}%` }} className="meter-gold" /></div>
+                      <div className="dp-meter"><span style={{ width: `${governanceTotal ? (governanceStats.committeeMembers / governanceTotal) * 100 : 0}%` }} className="meter-gold" /></div>
 
                       <div className="dp-list-row">
                         <div className="dp-list-meta"><span className="dot green" /> VIP / Patron Members</div>
                         <b>{governanceStats.vipPatronMembers}</b>
                       </div>
-                      <div className="dp-meter"><span style={{ width: `${governanceStats.total ? (governanceStats.vipPatronMembers / governanceStats.total) * 100 : 0}%` }} className="meter-green" /></div>
+                      <div className="dp-meter"><span style={{ width: `${governanceTotal ? (governanceStats.vipPatronMembers / governanceTotal) * 100 : 0}%` }} className="meter-green" /></div>
                     </div>
                   </div>
                 </article>
@@ -1011,6 +1301,7 @@ export default function Dashboard() {
               <div className="dp-charts">
                 <article className="dp-chart-card">
                   <h3>Member Growth (Last 6 Months)</h3>
+                  <p className="dp-chart-note">Illustrative only — shows the current trust total, not historical growth.</p>
                   <div className="dp-line-chart">
                     <svg className="dp-line-svg" viewBox="0 0 520 180" preserveAspectRatio="none">
                       <defs>
