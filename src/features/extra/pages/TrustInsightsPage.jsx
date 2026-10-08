@@ -56,7 +56,10 @@ export default function TrustInsightsPage() {
   // Last settled response, tagged with the range it was fetched for
   const [result, setResult] = useState({ rangeKey: '', stats: null, error: '' });
 
-  const rangeInvalid = !fromDate || !toDate || fromDate > toDate;
+  const [pageSize, setPageSize] = useState(10);
+  const [pageState, setPageState] = useState({ rangeKey: '', page: 1 });
+
+  const rangeInvalid =!fromDate || !toDate || fromDate > toDate;
   const rangeKey = `${fromDate}|${toDate}`;
   const loading = !rangeInvalid && result.rangeKey !== rangeKey;
   const stats = result.stats;
@@ -127,6 +130,13 @@ export default function TrustInsightsPage() {
   ];
 
   const trusts = stats?.trusts || [];
+
+  // Local pagination; the page resets to 1 whenever the date range changes
+  const totalPages = Math.max(Math.ceil(trusts.length / pageSize), 1);
+  const currentPage = Math.min(pageState.rangeKey === rangeKey ? pageState.page : 1, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleTrusts = trusts.slice(pageStart, pageStart + pageSize);
+  const goToPage = (page) => setPageState({ rangeKey, page });
 
   return (
     <div className="simple-root">
@@ -219,11 +229,12 @@ export default function TrustInsightsPage() {
                   <thead>
                     <tr>
                       <th>Trust</th>
+                      <th>Super User Number</th>
                       <th>Created At</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {trusts.map((item) => (
+                    {visibleTrusts.map((item) => (
                       <tr key={item.id}>
                         <td>
                           <div className="ti-trust">
@@ -237,11 +248,35 @@ export default function TrustInsightsPage() {
                             <span className="ti-trust-name">{item.name || 'Untitled Trust'}</span>
                           </div>
                         </td>
+                        <td>{item.superuser_mobile || '--'}</td>
                         <td>{formatDateTime(item.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {trusts.length > 0 && (
+              <div className="ti-pager">
+                <label className="ti-per-page">
+                  Show
+                  <select
+                    value={pageSize}
+                    onChange={(event) => { setPageSize(Number(event.target.value)); goToPage(1); }}
+                  >
+                    {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  per page
+                </label>
+                <span>
+                  Showing {pageStart + 1} – {pageStart + visibleTrusts.length} of {trusts.length}
+                </span>
+                <div className="ti-pager-btns">
+                  <button type="button" disabled={currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>‹ Previous</button>
+                  <span>Page {currentPage} of {totalPages}</span>
+                  <button type="button" disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>Next ›</button>
+                </div>
               </div>
             )}
           </section>

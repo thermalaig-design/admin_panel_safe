@@ -208,3 +208,49 @@
   .ti-range label { flex: 1 1 140px; }
   .ti-range input { width: 100%; }
 }
+
+.ti-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.ti-per-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ti-per-page select {
+  height: 32px;
+  border: 1px solid #dfe3f5;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #fff;
+}
+
+.ti-pager-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ti-pager-btns button {
+  border: none;
+  background: #f1f3ff;
+  color: #4f58d8;
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.ti-pager-btns button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

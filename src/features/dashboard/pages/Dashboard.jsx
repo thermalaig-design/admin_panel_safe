@@ -301,15 +301,16 @@ const MENU_MODULE_CARDS = [
     ),
   },
   {
-    id: 'menu-card-other-membership',
-    label: 'Other Membership',
-    description: 'View other memberships',
-    route: '/other-membership',
+    id: 'menu-card-user-analytics',
+    label: 'User Analytics',
+    description: 'View user activity and usage analytics',
+    route: '/user-analytics',
     gradient: 'linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)',
     icon: (
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
-        <rect x="4" y="5" width="16" height="14" rx="2.3" stroke="white" strokeWidth="1.8" />
-        <path d="M8 10h8M8 14h5" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="9" cy="8.5" r="2.6" stroke="white" strokeWidth="1.8" />
+        <path d="M4 18c0-2.6 2.2-4.6 5-4.6s5 2 5 4.6" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M15.5 17v-3M18 17v-6M20.5 17v-4" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
     ),
   },

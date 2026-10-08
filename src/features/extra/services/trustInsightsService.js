@@ -66,7 +66,7 @@ export async function fetchTrustCreationStats({ from, to, listLimit = 500 } = {}
       .limit(1),
     supabase
       .from(TRUST_TABLE)
-      .select('id, name, icon_url, created_at')
+      .select('id, name, icon_url, created_at, superuser:superuser_id(name, mobile)')
       .gte('created_at', rangeFromIso)
       .lt('created_at', rangeToExclusiveIso)
       .order('created_at', { ascending: false })
@@ -88,6 +88,7 @@ export async function fetchTrustCreationStats({ from, to, listLimit = 500 } = {}
         name: row.name || '',
         icon_url: row.icon_url || '',
         created_at: row.created_at || null,
+        superuser_mobile: row.superuser?.mobile || '',
       })),
     },
     error: null,

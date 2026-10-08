@@ -90,7 +90,14 @@ export default function LoginPage() {
               <label className="lp-label">Mobile Number</label>
               <div className={`lp-phone-wrap ${error ? 'has-error' : ''} ${shake ? 'shake' : ''}`}>
                 <div className="lp-cc">
-                  <span className="lp-flag">🇮🇳</span>
+                  {/* SVG instead of the flag emoji, which Windows renders as the letters "IN" */}
+                  <svg className="lp-flag" width="22" height="15" viewBox="0 0 22 15" aria-hidden="true">
+                    <rect width="22" height="5" fill="#FF9933" />
+                    <rect y="5" width="22" height="5" fill="#FFFFFF" />
+                    <rect y="10" width="22" height="5" fill="#138808" />
+                    <circle cx="11" cy="7.5" r="2" fill="none" stroke="#000080" strokeWidth="0.7" />
+                    <rect x="0.5" y="0.5" width="21" height="14" rx="2" fill="none" stroke="rgba(0,0,0,0.12)" />
+                  </svg>
                   <span className="lp-cc-text">+91</span>
                 </div>
                 <input
